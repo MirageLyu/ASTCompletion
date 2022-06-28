@@ -5,7 +5,7 @@ from tqdm import tqdm
 import json
 from typing import List
 from gensim.models import Word2Vec, KeyedVectors
-
+from copy import deepcopy
 
 
 def remove_comments_and_docstrings(source: str):
@@ -141,3 +141,58 @@ def train_both_w2v(astfile='../ast_py150/python100k_train.json',
             print('Finish build codetext w2v model.')
 
 # train_both_w2v()
+
+# traverse ast
+
+def load_ast_codetext_pairs(train_examples, ast_train_path, src_train_path_list):
+    ast_lines = open(ast_train_path, 'r', encoding='utf-8').read().splitlines()[:train_examples]
+    src_file_paths = open(src_train_path_list, 'r', encoding='utf-8').read().splitlines()[:train_examples]
+    src_prefix = '../src_py150/'
+
+    pairs = []
+    for ast_line, src_rel_path in tqdm(zip(ast_lines, src_file_paths), desc=f'loading {train_examples} nums of training_examples'):
+        pairs.append((ast_line, open(src_prefix + src_rel_path, 'r').read(), src_prefix + src_rel_path))
+    return pairs
+
+def first_order_traversal(ast_nodes, cur_idx, prefix, parAST_nxt_pairs, ast_prefix_length):
+    assert cur_idx < len(ast_nodes)
+    cur_node = ast_nodes[cur_idx]
+    parAST_nxt_pairs.append((deepcopy(prefix), deepcopy(cur_idx)))
+    prefix.append(cur_node)
+    if (len(prefix) > ast_prefix_length):
+        prefix.pop(0)
+    if cur_node.get('children'):
+        for child_idx in cur_node['children']:
+            first_order_traversal(ast_nodes, child_idx, prefix, parAST_nxt_pairs, ast_prefix_length)
+
+def generate_training_data(train_examples,
+                           ast_train_path,
+                           src_train_path_list,
+                           ast_prefix_length, # the number of reserved ast nodes before current node (Pre-Ordered)
+                           out_file_name="train.txt"):
+    pairs = load_ast_codetext_pairs(train_examples, ast_train_path, src_train_path_list)
+    f_out = open(out_file_name, 'w', encoding='utf-8')
+    for ast_line, codetext, src_file_path in tqdm(pairs, desc='Generating partial ast and next node.'):
+        parAST_nxt_pairs = []
+        ast_nodes = json.loads(ast_line)
+        # Add idx property to each node
+        for i, node in enumerate(ast_nodes):
+            node['idx'] = i
+        
+        prefix = []
+        first_order_traversal(ast_nodes, 0, prefix, parAST_nxt_pairs, ast_prefix_length)
+        
+        for par_ast, nxt_node in parAST_nxt_pairs:
+            f_out.write(json.dumps({
+                'ast': par_ast[-ast_prefix_length:],
+                'nxt': ast_nodes[nxt_node]['type'],
+                'src_path': src_file_path
+            }) + '\n')
+    f_out.close()
+
+# if __name__ == '__main__':
+#     TRAIN_EXAMPLES = 100 # MAX 100,000
+#     AST_TRAIN_PATH = '../ast_py150/python100k_train.json'
+#     SRC_TRAIN_PATH_LIST = '../src_py150/python100k_train.txt'
+#     AST_PREFIX_LENGTH = 30
+#     generate_training_data(TRAIN_EXAMPLES, AST_TRAIN_PATH, SRC_TRAIN_PATH_LIST, AST_PREFIX_LENGTH)

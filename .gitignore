@@ -2,3 +2,6 @@
 ast_py150/*.json
 src_py150/data
 code/*.bin
+code/train.txt
+pretrained_models/bert-base-cased
+pretrained_models/codebert-base
