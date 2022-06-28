@@ -1,3 +1,4 @@
 .vscode
 ast_py150/*.json
 src_py150/data
+code/*.bin
